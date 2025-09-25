@@ -1,20 +1,30 @@
 from flask import Flask, request, send_file, jsonify
 from io import BytesIO
-from mathml2docx import convert_html
+from docx import Document
+from mathml2docx import MathML2Docx
 
 app = Flask(__name__)
 
 @app.route("/convert", methods=["POST"])
 def convert():
     try:
-        html = request.data.decode("utf-8")  # recibe el HTML puro del body
+        # Recibir JSON con el campo "html"
+        data = request.get_json()
+        if not data or "html" not in data:
+            return jsonify({"error": "Missing 'html' field in JSON"}), 400
 
-        # Crear un buffer para el DOCX
+        html = data["html"]
+
+        # Crear documento Word
+        doc = Document()
+
+        # Convertir HTML con MathML
+        conv = MathML2Docx(doc)
+        conv.add_html(html)
+
+        # Guardar en memoria
         buffer = BytesIO()
-
-        # Convertir el HTML con MathML a DOCX
-        convert_html(html, buffer)
-
+        doc.save(buffer)
         buffer.seek(0)
 
         return send_file(
@@ -25,6 +35,7 @@ def convert():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
