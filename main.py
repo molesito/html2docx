@@ -21,7 +21,7 @@ def convert():
 
             output_docx = tmp_html.name.replace(".html", ".docx")
 
-            # Usar pandoc para convertir
+            # Usar pandoc para convertir HTML → DOCX
             subprocess.run(
                 ["pandoc", tmp_html.name, "-o", output_docx],
                 check=True
