@@ -1,50 +1,41 @@
-from flask import Flask, request, send_file, jsonify
-from io import BytesIO
-import subprocess
-import tempfile
-import os
+from fastapi import FastAPI, Response, HTTPException
+from pydantic import BaseModel
+import io, re
+from html2docx import html2docx
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route("/convert", methods=["POST"])
-def convert():
+class Payload(BaseModel):
+    html: str
+    filename: str = "documento.docx"
+
+SCRIPT_TAG_RE = re.compile(r"<\s*script[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "html-to-docx"}
+
+@app.post("/convert")
+def convert(payload: Payload):
+    if not payload.html.strip():
+        raise HTTPException(status_code=400, detail="Campo 'html' vacío")
+
+    cleaned_html = re.sub(SCRIPT_TAG_RE, "", payload.html)
+
     try:
-        data = request.get_json()
-        if not data or "html" not in data:
-            return jsonify({"error": "Missing 'html' field in JSON"}), 400
-
-        html_content = data["html"]
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_html:
-            tmp_html.write(html_content.encode("utf-8"))
-            tmp_html.flush()
-
-            output_docx = tmp_html.name.replace(".html", ".docx")
-
-            # Usar pandoc para convertir HTML → DOCX
-            subprocess.run(
-                ["pandoc", tmp_html.name, "-o", output_docx],
-                check=True
-            )
-
-            with open(output_docx, "rb") as f:
-                buffer = BytesIO(f.read())
-
-        # Limpiar temporales
-        os.remove(tmp_html.name)
-        os.remove(output_docx)
-
-        buffer.seek(0)
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name="output.docx",
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-
+        doc = html2docx(cleaned_html)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=422, detail=f"Error en conversión: {e}")
 
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    filename = payload.filename if payload.filename.endswith(".docx") else payload.filename + ".docx"
+
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers
+    )
