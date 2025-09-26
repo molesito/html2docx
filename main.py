@@ -27,14 +27,16 @@ async def convert(req: ConvertRequest):
         raise HTTPException(status_code=400, detail="Missing 'html' content")
 
     try:
-        buffer = BytesIO(html2docx(req.html))
+        # html2docx requiere al menos html y un título
+        docx_bytes = html2docx(req.html, title="Generated Document")
+        buffer = BytesIO(docx_bytes)
         buffer.seek(0)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Conversion failed: {e}")
 
     filename = safe_filename(req.filename or "document.docx")
-
     headers = {"Content-Disposition": f"attachment; filename=\"{filename}\""}
+
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
