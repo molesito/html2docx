@@ -28,7 +28,7 @@ def convert(payload: Payload):
     # 2) Crear documento y convertir HTML
     try:
         doc = Document()
-        html2docx(cleaned_html, doc, title="Documento generado")
+        html2docx(cleaned_html, doc)   # ✅ sin "title"
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Error en conversión: {e}")
 
