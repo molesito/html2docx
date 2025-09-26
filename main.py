@@ -1,43 +1,29 @@
-from fastapi import FastAPI, Response, HTTPException
-from pydantic import BaseModel
-import io, re
-from html2docx import html2docx
-from docx import Document
-
-app = FastAPI(title="HTML → DOCX")
-
-class Payload(BaseModel):
-    html: str
-    filename: str = "documento.docx"
-
-# Regex simple para quitar <script> (seguridad)
-SCRIPT_TAG_RE = re.compile(r"<\s*script[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)
-
-@app.get("/")
-def root():
-    return {"status": "ok", "service": "html-to-docx", "endpoint": "/convert"}
+from bs4 import BeautifulSoup
 
 @app.post("/convert")
 def convert(payload: Payload):
     if not payload.html.strip():
         raise HTTPException(status_code=400, detail="Campo 'html' vacío")
 
-    # 1) Limpiar HTML
+    # 1) Limpiar scripts
     cleaned_html = re.sub(SCRIPT_TAG_RE, "", payload.html)
 
-    # 2) Crear documento y convertir HTML
+    # 2) Extraer solo el body
+    soup = BeautifulSoup(cleaned_html, "html.parser")
+    body = soup.body or soup  # si no hay body, usamos todo
+    html_content = str(body)
+
+    # 3) Crear doc y convertir
     try:
         doc = Document()
-        html2docx(cleaned_html, doc)   # ✅ sin "title"
+        html2docx(html_content, doc)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Error en conversión: {e}")
 
-    # 3) Guardar en memoria
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
 
-    # 4) Nombre final
     filename = payload.filename if payload.filename.endswith(".docx") else payload.filename + ".docx"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
 
