@@ -1,34 +1,47 @@
-from bs4 import BeautifulSoup
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from io import BytesIO
+from html2docx import html2docx
+import os
+
+app = FastAPI()
+
+class ConvertRequest(BaseModel):
+    html: str
+    filename: str | None = "document.docx"
+
+def safe_filename(name: str) -> str:
+    cleaned = "".join(c for c in name if c.isalnum() or c in ("-", "_", "."))
+    if not cleaned.lower().endswith(".docx"):
+        cleaned += ".docx"
+    return cleaned or "document.docx"
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 @app.post("/convert")
-def convert(payload: Payload):
-    if not payload.html.strip():
-        raise HTTPException(status_code=400, detail="Campo 'html' vacío")
+async def convert(req: ConvertRequest):
+    if not req.html.strip():
+        raise HTTPException(status_code=400, detail="Missing 'html' content")
 
-    # 1) Limpiar scripts
-    cleaned_html = re.sub(SCRIPT_TAG_RE, "", payload.html)
-
-    # 2) Extraer solo el body
-    soup = BeautifulSoup(cleaned_html, "html.parser")
-    body = soup.body or soup  # si no hay body, usamos todo
-    html_content = str(body)
-
-    # 3) Crear doc y convertir
     try:
-        doc = Document()
-        html2docx(html_content, doc)
+        buffer = BytesIO(html2docx(req.html))
+        buffer.seek(0)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Error en conversión: {e}")
+        raise HTTPException(status_code=422, detail=f"Conversion failed: {e}")
 
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
+    filename = safe_filename(req.filename or "document.docx")
 
-    filename = payload.filename if payload.filename.endswith(".docx") else payload.filename + ".docx"
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-
-    return Response(
-        content=buf.read(),
+    headers = {"Content-Disposition": f"attachment; filename=\"{filename}\""}
+    return StreamingResponse(
+        buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers=headers
+        headers=headers,
     )
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
