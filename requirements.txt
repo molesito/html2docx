@@ -1,4 +1,4 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.5
-html2docx==1.8.0
+html2docx==1.6.0
 python-docx==1.1.2
