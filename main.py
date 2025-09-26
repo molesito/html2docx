@@ -1,49 +1,39 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Response
 from pydantic import BaseModel
-from io import BytesIO
-from html2docx import html2docx
+import pypandoc
+import tempfile
 import os
 
 app = FastAPI()
 
-class ConvertRequest(BaseModel):
+class HtmlPayload(BaseModel):
     html: str
-    filename: str | None = "document.docx"
-
-def safe_filename(name: str) -> str:
-    cleaned = "".join(c for c in name if c.isalnum() or c in ("-", "_", "."))
-    if not cleaned.lower().endswith(".docx"):
-        cleaned += ".docx"
-    return cleaned or "document.docx"
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
 
 @app.post("/convert")
-async def convert(req: ConvertRequest):
-    if not req.html.strip():
-        raise HTTPException(status_code=400, detail="Missing 'html' content")
+def convert_html(payload: HtmlPayload):
+    # Crear archivo temporal de salida
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_out:
+        output_path = tmp_out.name
 
     try:
-        # html2docx requiere al menos html y un título
-        docx_bytes = html2docx(req.html, title="Generated Document")
-        buffer = BytesIO(docx_bytes)
-        buffer.seek(0)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Conversion failed: {e}")
+        # Convertir HTML -> DOCX
+        pypandoc.convert_text(
+            payload.html,
+            "docx",
+            format="html",
+            outputfile=output_path,
+            extra_args=["--standalone"]
+        )
 
-    filename = safe_filename(req.filename or "document.docx")
-    headers = {"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        # Leer contenido generado
+        with open(output_path, "rb") as f:
+            content = f.read()
 
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers=headers,
-    )
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+        return Response(
+            content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": "attachment; filename=documento.docx"}
+        )
+    finally:
+        if os.path.exists(output_path):
+            os.remove(output_path)
